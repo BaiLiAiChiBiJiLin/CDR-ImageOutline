@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<requirements xmlns="urn:corel:namespaces:zcf:xmlns:extension">
+  <require_must require_type="corel_application" requires_any_of="Draw" />
+  <require_must require_type="corel_suite_version" requires_at_or_after="22.0" requires_before="23.0" />
+  <require_must require_type="platform_bits" requires_any_of="x64" />
+  <require_must require_type="windows_version" requires_at_or_after="*" requires_before="*" />
+</requirements>

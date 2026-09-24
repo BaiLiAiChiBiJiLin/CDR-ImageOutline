@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <resources>
+    <resource name="CdrOutline" path="CdrOutlineIntl.dll" localized="false">
+      <resourceMap>
+        <resEntry id="5da381bf-9571-4435-a8eb-27ad9a0ef750" string="100" />
+        <resEntry id="6d7439bb-deb6-4784-8f31-5a6a25413fd7" string="101" />
+      </resourceMap>
+    </resource>
+  </resources>
+</config>

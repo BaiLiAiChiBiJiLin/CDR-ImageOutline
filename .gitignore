@@ -1,0 +1,9 @@
+/target/
+/legacy-extracted/
+/cdr工具.exe
+/Andrea Silvestro Ortino.cdr
+/Backup_of_naomi hannah.cdr
+/test.cdr
+*.pdb
+/crates/cdr-plugin/bin/
+/crates/cdr-plugin/obj/

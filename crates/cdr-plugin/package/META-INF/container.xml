@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:crl="urn:corel:namespaces:zcf:xmlns:container">
+  <rootfiles>
+    <rootfile crl:file-kind="main" full-path="content/extension.xml" media-type="application/x-vnd.corel.zcf.cgsaddon+xml" />
+    <rootfile crl:file-kind="requirements" full-path="content/requirements.xml" media-type="application/x-vnd.corel.zcf.requirements+xml" />
+  </rootfiles>
+</container>

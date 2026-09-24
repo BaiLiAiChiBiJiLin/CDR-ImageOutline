@@ -1,0 +1,7 @@
+#pragma code_page(65001)
+
+STRINGTABLE
+BEGIN
+    100 "\001CT=CDR 巡边与孔位...\001TH=CDR 巡边与孔位\001TT=打开 CDR 巡边与孔位面板。"
+    101 "CDR 巡边与孔位"
+END

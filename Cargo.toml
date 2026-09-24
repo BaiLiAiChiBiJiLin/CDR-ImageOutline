@@ -1,0 +1,8 @@
+[workspace]
+members = ["crates/cdr-corel", "crates/cdr-desktop", "crates/cdr-domain", "crates/cdr-raster"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
