@@ -1,4 +1,5 @@
-use reqwest::blocking::Client;
+use reqwest::Proxy;
+use reqwest::blocking::{Client, ClientBuilder};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
@@ -34,7 +35,7 @@ pub fn current_version() -> &'static str {
 }
 
 pub fn check_latest() -> Result<Option<UpdateInfo>, String> {
-    let client = Client::builder()
+    let client = client_builder()
         .user_agent(format!("CDR-ImageOutline/{}", current_version()))
         .timeout(Duration::from_secs(15))
         .build()
@@ -87,7 +88,7 @@ pub fn download_and_install(info: &UpdateInfo, bundle_dir: &Path) -> Result<(), 
     let temp = std::env::temp_dir().join(format!("cdr-update-{}", std::process::id()));
     fs::create_dir_all(&temp).map_err(|e| format!("创建更新临时目录失败：{e}"))?;
     let zip_path = temp.join("update.zip");
-    let mut response = Client::builder()
+    let mut response = client_builder()
         .user_agent(format!("CDR-ImageOutline/{}", current_version()))
         .timeout(Duration::from_secs(120))
         .build()
@@ -153,6 +154,60 @@ Remove-Item -LiteralPath '{script}' -Force
 
 fn ps_quote(path: &Path) -> String {
     path.to_string_lossy().replace('\'', "''")
+}
+
+fn client_builder() -> ClientBuilder {
+    let builder = Client::builder();
+    let Some(proxy) = system_proxy() else {
+        return builder;
+    };
+    match Proxy::all(proxy) {
+        Ok(proxy) => builder.proxy(proxy),
+        Err(_) => builder,
+    }
+}
+
+fn system_proxy() -> Option<String> {
+    for name in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
+        if let Ok(value) = std::env::var(name) {
+            if !value.trim().is_empty() {
+                return Some(value);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        let output = Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+                "/v",
+                "ProxyServer",
+            ])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let value = text
+            .lines()
+            .find(|line| line.contains("ProxyServer"))
+            .and_then(|line| line.split_whitespace().last())?;
+        let value = value
+            .split(';')
+            .find_map(|part| {
+                part.strip_prefix("https=")
+                    .or_else(|| part.strip_prefix("http="))
+            })
+            .unwrap_or(value);
+        return Some(
+            if value.starts_with("http://") || value.starts_with("https://") {
+                value.to_owned()
+            } else {
+                format!("http://{value}")
+            },
+        );
+    }
+    #[cfg(not(windows))]
+    None
 }
 
 fn is_newer(candidate: &str, current: &str) -> bool {
