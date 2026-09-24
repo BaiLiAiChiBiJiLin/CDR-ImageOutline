@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$OpenCvRoot = $env:OPENCV_DIR
 )
 

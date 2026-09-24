@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$CorelInstallDir = 'D:\apps\CorelDRAW Graphics Suite 2020',
     [string]$OpenCvRoot = $env:OPENCV_DIR,
     [string]$VCRedistDir,

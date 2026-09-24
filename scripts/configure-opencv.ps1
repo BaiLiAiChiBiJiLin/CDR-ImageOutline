@@ -1,4 +1,4 @@
-function Set-OpenCvEnvironment {
+﻿function Set-OpenCvEnvironment {
     param(
         [Parameter(Mandatory = $true)]
         [string]$OpenCvRoot
