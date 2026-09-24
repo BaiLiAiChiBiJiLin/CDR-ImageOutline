@@ -702,8 +702,6 @@ mod app {
                                     .color(Palette::MUTED_TEXT),
                             );
                             ui.add_space(20.0);
-                            self.update_panel(ui, context);
-                            ui.add_space(12.0);
 
                             let processing_ready = self.bundle_status.processing_ready();
                             ui.columns(2, |columns| {
@@ -810,6 +808,8 @@ mod app {
                                             }
                                         });
                                     });
+                            self.update_panel(&mut columns[1], context);
+                            columns[1].add_space(12.0);
                             self.deployment_panel(&mut columns[1], running, context);
                             columns[1].add_space(12.0);
                             self.status(&mut columns[1]);
