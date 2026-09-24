@@ -1,7 +1,8 @@
 param(
     [string]$CorelInstallDir = 'D:\apps\CorelDRAW Graphics Suite 2020',
     [string]$OpenCvRoot = $env:OPENCV_DIR,
-    [string]$VCRedistDir
+    [string]$VCRedistDir,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,8 +44,16 @@ foreach ($candidate in @($distribution, $archive)) {
     if (-not $resolved.StartsWith($targetRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing to replace a path outside target/: $resolved"
     }
-    if (Test-Path -LiteralPath $resolved) {
+    if ((Test-Path -LiteralPath $resolved) -and -not $Force) {
         throw "Refusing to overwrite an existing portable release: $resolved"
+    }
+}
+if ($Force) {
+    # 只覆盖 target/portable 下当前版本的生成产物。
+    foreach ($candidate in @($distribution, $archive)) {
+        if (Test-Path -LiteralPath $candidate) {
+            Remove-Item -LiteralPath $candidate -Recurse -Force
+        }
     }
 }
 New-Item -ItemType Directory -Path $distribution -Force | Out-Null

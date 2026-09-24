@@ -31,3 +31,11 @@ cargo run -p cdr-corel -- process-selection target\selection-run\selection-repor
 
 命令不会自动保存活动文档。没有真实透明边缘的位图会被跳过，非位图选择会在修改文档前报错。
 
+## 发布与打包
+
+使用 `scripts\release.ps1` 自动递增版本并生成 Windows 便携包。完整参数、GitHub Release 发布和故障排查请参阅：[一键发布与打包](scripts/RELEASE.md)。
+
+```powershell
+.\scripts\release.ps1 -WhatIf
+.\scripts\release.ps1 -Push -PublishRelease -CreateIssue
+```
