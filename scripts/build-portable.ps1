@@ -36,7 +36,7 @@ $portableRoot = Join-Path $targetRoot 'portable'
 $desktopManifest = Get-Content -LiteralPath (Join-Path $projectRoot 'crates\cdr-desktop\Cargo.toml') -Raw
 $versionMatch = [regex]::Match($desktopManifest, '(?m)^version\s*=\s*"([^\"]+)"')
 if (-not $versionMatch.Success) { throw 'Could not determine the desktop release version.' }
-$releaseTag = 'CDR巡边工具-{0}' -f $versionMatch.Groups[1].Value
+$releaseTag = 'CDR-ImageOutline-{0}' -f $versionMatch.Groups[1].Value
 $distribution = Join-Path $portableRoot $releaseTag
 $archive = Join-Path $portableRoot ($releaseTag + '-Windows-x64.zip')
 foreach ($candidate in @($distribution, $archive)) {

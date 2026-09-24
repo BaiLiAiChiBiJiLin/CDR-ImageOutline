@@ -37,6 +37,7 @@ param(
   - -PublishRelease 需要已安装并登录 GitHub CLI（gh），会上传 ZIP 和 SHA256SUMS.txt。
   - -CreateIssue 会在 Release 创建后新建 Issue；它使用本次 Git commit 信息作为版本说明。
   - 新版本发布不会覆盖已存在的产物；工作区干净时允许覆盖当前版本的 target/portable 生成物以便重建。
+  - 便携目录、ZIP 和 SHA256SUMS.txt 中的 ZIP 文件名统一使用 CDR-ImageOutline-<version>。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -221,8 +222,8 @@ try {
     }
 
     $portableRoot = Join-Path $projectRoot 'target\portable'
-    $distribution = Join-Path $portableRoot "CDR巡边工具-$newVersion"
-    $archive = Join-Path $portableRoot "CDR巡边工具-$newVersion-Windows-x64.zip"
+    $distribution = Join-Path $portableRoot "CDR-ImageOutline-$newVersion"
+    $archive = Join-Path $portableRoot "CDR-ImageOutline-$newVersion-Windows-x64.zip"
     $checksums = Join-Path $portableRoot 'SHA256SUMS.txt'
     if (-not $NoBuild) {
         foreach ($artifact in @($distribution, $archive, $checksums)) {

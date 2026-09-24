@@ -63,6 +63,41 @@ mod app {
         Error(String),
     }
 
+    enum UpdateWorkerMessage {
+        Check(Result<Option<UpdateInfo>, String>),
+        Install(Result<(), String>),
+    }
+
+    enum UpdateWorkerAction {
+        KeepRunning,
+        RestartToInstall,
+    }
+
+    fn apply_update_message(
+        message: UpdateWorkerMessage,
+        current_version: &str,
+    ) -> (String, Option<UpdateInfo>, UpdateWorkerAction) {
+        match message {
+            UpdateWorkerMessage::Check(Ok(Some(info))) => {
+                let status = format!("发现新版本 v{}", info.version);
+                (status, Some(info), UpdateWorkerAction::KeepRunning)
+            }
+            UpdateWorkerMessage::Check(Ok(None)) => (
+                format!("当前已是最新版本 v{current_version}"),
+                None,
+                UpdateWorkerAction::KeepRunning,
+            ),
+            UpdateWorkerMessage::Check(Err(error)) | UpdateWorkerMessage::Install(Err(error)) => {
+                (error, None, UpdateWorkerAction::KeepRunning)
+            }
+            UpdateWorkerMessage::Install(Ok(())) => (
+                "更新包已下载，程序将关闭并自动完成更新。".to_owned(),
+                None,
+                UpdateWorkerAction::RestartToInstall,
+            ),
+        }
+    }
+
     pub struct CdrDesktopApp {
         outline_offset_mm: f64,
         hole_diameter_mm: f64,
@@ -79,7 +114,7 @@ mod app {
         deployment_status: String,
         deployment_worker: Option<Receiver<Result<String, String>>>,
         upload_after_export: bool,
-        update_worker: Option<Receiver<Result<Option<UpdateInfo>, String>>>,
+        update_worker: Option<Receiver<UpdateWorkerMessage>>,
         update_info: Option<UpdateInfo>,
         update_status: String,
         update_started: bool,
@@ -124,7 +159,7 @@ mod app {
             let (sender, receiver) = mpsc::channel();
             let repaint_context = context.clone();
             std::thread::spawn(move || {
-                let _ = sender.send(updater::check_latest());
+                let _ = sender.send(UpdateWorkerMessage::Check(updater::check_latest()));
                 repaint_context.request_repaint();
             });
             self.update_worker = Some(receiver);
@@ -137,8 +172,8 @@ mod app {
             let (sender, receiver) = mpsc::channel();
             let repaint_context = context.clone();
             std::thread::spawn(move || {
-                let result = updater::download_and_install(&info, &bundle).map(|_| None);
-                let _ = sender.send(result);
+                let result = updater::download_and_install(&info, &bundle);
+                let _ = sender.send(UpdateWorkerMessage::Install(result));
                 repaint_context.request_repaint();
             });
             self.update_worker = Some(receiver);
@@ -152,16 +187,12 @@ mod app {
             };
             if let Ok(result) = receiver.try_recv() {
                 self.update_worker = None;
-                match result {
-                    Ok(Some(info)) => {
-                        self.update_status = format!("发现新版本 v{}", info.version);
-                        self.update_info = Some(info);
-                    }
-                    Ok(None) => {
-                        self.update_status = "更新包已下载，程序将关闭并自动完成更新。".to_owned();
-                        std::process::exit(0);
-                    }
-                    Err(error) => self.update_status = error,
+                let (status, info, action) =
+                    apply_update_message(result, updater::current_version());
+                self.update_status = status;
+                self.update_info = info;
+                if matches!(action, UpdateWorkerAction::RestartToInstall) {
+                    std::process::exit(0);
                 }
             }
         }
@@ -1198,7 +1229,30 @@ mod app {
 
     #[cfg(test)]
     mod tests {
-        use super::{deployment_status_display_text, upload_and_focus_printflow};
+        use super::{
+            UpdateWorkerAction, UpdateWorkerMessage, apply_update_message,
+            deployment_status_display_text, upload_and_focus_printflow,
+        };
+
+        #[test]
+        fn no_available_update_keeps_desktop_app_running() {
+            let (status, info, action) =
+                apply_update_message(UpdateWorkerMessage::Check(Ok(None)), "0.1.26");
+
+            assert_eq!(status, "当前已是最新版本 v0.1.26");
+            assert!(info.is_none());
+            assert!(matches!(action, UpdateWorkerAction::KeepRunning));
+        }
+
+        #[test]
+        fn successful_update_install_requests_restart() {
+            let (status, info, action) =
+                apply_update_message(UpdateWorkerMessage::Install(Ok(())), "0.1.26");
+
+            assert!(status.contains("更新包已下载"));
+            assert!(info.is_none());
+            assert!(matches!(action, UpdateWorkerAction::RestartToInstall));
+        }
 
         #[test]
         fn successful_printflow_upload_requests_window_focus() {

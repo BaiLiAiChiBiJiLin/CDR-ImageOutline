@@ -23,10 +23,12 @@
 产物位于：
 
 ```text
-target\portable\CDR巡边工具-0.1.26\
-target\portable\CDR巡边工具-0.1.26-Windows-x64.zip
+target\portable\CDR-ImageOutline-0.1.26\
+target\portable\CDR-ImageOutline-0.1.26-Windows-x64.zip
 target\portable\SHA256SUMS.txt
 ```
+
+便携目录、ZIP 和 `SHA256SUMS.txt` 中记录的 ZIP 文件名统一使用 `CDR-ImageOutline-<版本号>` 前缀。校验文件中的 ZIP 名称必须与 Release 上传的资产名称完全一致。
 
 如果需要同时创建 GitHub Release 并上传 ZIP 和校验文件：
 
@@ -46,7 +48,7 @@ gh auth login
 
 自动更新依赖 GitHub Release 中同时存在以下资产：
 
-- `CDR巡边工具-0.1.26-Windows-x64.zip`
+- `CDR-ImageOutline-0.1.26-Windows-x64.zip`
 - `SHA256SUMS.txt`
 
 只推送 Git commit 不会产生可供自动更新下载的安装包。
@@ -148,7 +150,7 @@ git remote -v
 比较 ZIP 实际 SHA-256 与校验文件：
 
 ```powershell
-$zip = 'target\portable\CDR巡边工具-0.1.26-Windows-x64.zip'
+$zip = 'target\portable\CDR-ImageOutline-0.1.26-Windows-x64.zip'
 (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 Get-Content target\portable\SHA256SUMS.txt
 ```
@@ -156,7 +158,7 @@ Get-Content target\portable\SHA256SUMS.txt
 检查便携包中的主要文件：
 
 ```powershell
-Get-ChildItem 'target\portable\CDR巡边工具-0.1.26' -File |
+Get-ChildItem 'target\portable\CDR-ImageOutline-0.1.26' -File |
   Select-Object Name, Length
 ```
 
