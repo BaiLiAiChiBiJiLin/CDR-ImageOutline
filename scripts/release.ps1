@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('patch', 'minor', 'major')]
     [string]$Bump = 'patch',
     [string]$Remote = 'origin',
