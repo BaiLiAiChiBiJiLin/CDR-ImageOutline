@@ -136,6 +136,10 @@ namespace CdrOutlinePlugin
         private readonly Button trimButton;
         private readonly Button addHoleButton;
         private readonly Button mergeHolesButton;
+        private readonly TextBox matrixColumns;
+        private readonly TextBox matrixGapX;
+        private readonly TextBox matrixGapY;
+        private readonly Button matrixArrangeButton;
         private readonly Button exportSelectionButton;
         private readonly Button exportPageButton;
         private readonly CheckBox autoUploadPrintFlow;
@@ -159,6 +163,10 @@ namespace CdrOutlinePlugin
             trimButton = CreateActionButton("去图片透明边并等比缩放", false);
             addHoleButton = CreateActionButton("加孔", false);
             mergeHolesButton = CreateActionButton("合并孔位", true);
+            matrixColumns = CreateNumberBox("3", "矩阵列数");
+            matrixGapX = CreateNumberBox("5.0", "矩阵横向间距，单位毫米");
+            matrixGapY = CreateNumberBox("5.0", "矩阵纵向间距，单位毫米");
+            matrixArrangeButton = CreateActionButton("拆分并矩阵排列", true);
             exportSelectionButton = CreateActionButton("导出选中为 SVG", false);
             exportPageButton = CreateActionButton("导出页面为 SVG", true);
             autoUploadPrintFlow = new CheckBox
@@ -172,6 +180,7 @@ namespace CdrOutlinePlugin
             trimButton.Click += async delegate { await ProcessSelectionAsync("trim"); };
             addHoleButton.Click += async delegate { await ProcessSelectionAsync("add-holes"); };
             mergeHolesButton.Click += async delegate { await ProcessSelectionAsync("merge-holes"); };
+            matrixArrangeButton.Click += async delegate { await ArrangeMatrixAsync(); };
             exportSelectionButton.Click += async delegate { await ExportSvgAsync("export-selection"); };
             exportPageButton.Click += async delegate { await ExportSvgAsync("export-page"); };
 
@@ -225,15 +234,17 @@ namespace CdrOutlinePlugin
             var content = new StackPanel();
             content.Children.Add(trimButton);
             var outlineSection = new StackPanel();
-            outlineSection.Children.Add(CreateParameterRow("巡边外扩", outlineOffset));
-            outlineSection.Children.Add(CreateParameterRow("道具口径", toolDiameter));
-            outlineSection.Children.Add(CreateParameterRow("线条平滑", smoothing));
+            outlineSection.Children.Add(CreateResponsiveParameters(
+                CreateParameterField("巡边外扩", outlineOffset),
+                CreateParameterField("刀具口径", toolDiameter),
+                CreateParameterField("线条平滑", smoothing)));
             outlineSection.Children.Add(outlineButton);
-            content.Children.Add(CreateSection("巡边", outlineSection));
+            content.Children.Add(CreateSection("巡边（单位 mm）", outlineSection));
 
             var holeSection = new StackPanel();
-            holeSection.Children.Add(CreateParameterRow("孔径", holeDiameter));
-            holeSection.Children.Add(CreateParameterRow("孔边距", holeEdgeClearance));
+            holeSection.Children.Add(CreateResponsiveParameters(
+                CreateParameterField("孔径", holeDiameter),
+                CreateParameterField("孔边距", holeEdgeClearance)));
             var holeActions = new WpfGrid { Margin = new Thickness(0, 2, 0, 0) };
             holeActions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             holeActions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -252,7 +263,23 @@ namespace CdrOutlinePlugin
                 Margin = new Thickness(0, 6, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
-            content.Children.Add(CreateSection("钥匙孔", holeSection));
+            content.Children.Add(CreateSection("钥匙孔（单位 mm）", holeSection));
+
+            var matrixSection = new StackPanel();
+            matrixSection.Children.Add(CreateResponsiveParameters(
+                CreateParameterField("矩阵列数", matrixColumns),
+                CreateParameterField("横向间距", matrixGapX),
+                CreateParameterField("纵向间距", matrixGapY)));
+            matrixSection.Children.Add(matrixArrangeButton);
+            matrixSection.Children.Add(new TextBlock
+            {
+                Text = "选中对象会按矩阵排列；只有单个外层包裹组会解除一层。",
+                Foreground = MutedBrush,
+                FontSize = 11,
+                Margin = new Thickness(0, 6, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            });
+            content.Children.Add(CreateSection("矩阵排列（间距单位 mm）", matrixSection));
 
             var exportSection = new StackPanel();
             exportSection.Children.Add(new TextBlock
@@ -279,8 +306,9 @@ namespace CdrOutlinePlugin
             var scroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Content = content
-        };
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = content
+            };
             WpfGrid.SetRow(scroll, 1);
             root.Children.Add(scroll);
 
@@ -310,6 +338,7 @@ namespace CdrOutlinePlugin
                 Text = title,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = TextBrush,
+                TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 6)
             });
             section.Children.Add(body);
@@ -325,35 +354,73 @@ namespace CdrOutlinePlugin
             };
         }
 
-        private static WpfGrid CreateParameterRow(string label, TextBox input)
+        private static WpfGrid CreateParameterField(string label, TextBox input)
         {
-            var row = new WpfGrid { Margin = new Thickness(0, 0, 0, 6) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-
+            var field = new WpfGrid();
             var text = new TextBlock
             {
                 Text = label,
                 Foreground = TextBrush,
+                TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            WpfGrid.SetColumn(text, 0);
-            row.Children.Add(text);
+            field.Children.Add(text);
+            field.Children.Add(input);
+            return field;
+        }
 
-            WpfGrid.SetColumn(input, 1);
-            row.Children.Add(input);
+        private static WpfGrid CreateResponsiveParameters(params WpfGrid[] fields)
+        {
+            const double minimumFieldWidth = 80;
+            const double gap = 8;
+            var grid = new WpfGrid { Margin = new Thickness(0, 0, 0, 6) };
+            foreach (var field in fields)
+                grid.Children.Add(field);
 
-            var unit = new TextBlock
+            bool? horizontalLayout = null;
+            Action<double> updateLayout = delegate(double width)
             {
-                Text = "mm",
-                Foreground = MutedBrush,
-                Margin = new Thickness(6, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center
+                var horizontal = width >= fields.Length * minimumFieldWidth + (fields.Length - 1) * gap;
+                if (horizontalLayout == horizontal)
+                    return;
+                horizontalLayout = horizontal;
+                grid.ColumnDefinitions.Clear();
+                grid.RowDefinitions.Clear();
+                for (var index = 0; index < fields.Length; index++)
+                {
+                    if (horizontal)
+                        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    else
+                        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                    var field = fields[index];
+                    WpfGrid.SetColumn(field, horizontal ? index : 0);
+                    WpfGrid.SetRow(field, horizontal ? 0 : index);
+                    field.Margin = horizontal
+                        ? new Thickness(index == 0 ? 0 : gap / 2, 0, index == fields.Length - 1 ? 0 : gap / 2, 0)
+                        : new Thickness(0, 0, 0, index == fields.Length - 1 ? 0 : 6);
+                    field.ColumnDefinitions.Clear();
+                    field.RowDefinitions.Clear();
+                    var label = (TextBlock)field.Children[0];
+                    var input = field.Children[1];
+                    if (horizontal)
+                    {
+                        field.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                        field.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    }
+                    else
+                    {
+                        field.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78) });
+                        field.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    }
+                    label.Margin = horizontal ? new Thickness(0, 0, 0, 4) : new Thickness(0);
+                    WpfGrid.SetRow(input, horizontal ? 1 : 0);
+                    WpfGrid.SetColumn(input, horizontal ? 0 : 1);
+                }
             };
-            WpfGrid.SetColumn(unit, 2);
-            row.Children.Add(unit);
-            return row;
+            updateLayout(0);
+            grid.SizeChanged += delegate { updateLayout(grid.ActualWidth); };
+            return grid;
         }
 
         private static TextBox CreateNumberBox(string value, string automationName)
@@ -464,6 +531,72 @@ namespace CdrOutlinePlugin
             }
         }
 
+        private async Task ArrangeMatrixAsync()
+        {
+            double columnsValue;
+            double gapX;
+            double gapY;
+            if (!TryReadPositiveInteger(matrixColumns, out columnsValue)
+                || !TryReadNonNegative(matrixGapX, out gapX)
+                || !TryReadNonNegative(matrixGapY, out gapY))
+            {
+                SetStatus("矩阵列数必须是正整数，横向和纵向间距不能小于 0。", ErrorBrush);
+                return;
+            }
+
+            var executable = Path.Combine(
+                Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location),
+                "cdr-corel.exe");
+            if (!File.Exists(executable))
+            {
+                SetStatus("缺少 cdr-corel.exe，请重新安装插件。", ErrorBrush);
+                return;
+            }
+
+            SetRunning(true);
+            progressBar.Value = 0;
+            SetStatus("正在处理选中内容并计算矩阵位置…", TextBrush);
+            try
+            {
+                var result = await RunProcessorAsync(
+                    executable,
+                    "matrix-arrange",
+                    columnsValue,
+                    gapX,
+                    gapY,
+                    0,
+                    0,
+                    delegate(double value, string stage)
+                    {
+                        Dispatcher.BeginInvoke(new Action(delegate
+                        {
+                            progressBar.Value = Math.Max(0, Math.Min(100, value * 100));
+                            SetStatus(stage, TextBrush);
+                        }));
+                    });
+                if (result.ExitCode == 0)
+                {
+                    progressBar.Value = 100;
+                    SetStatus(result.StandardOutput.Trim(), SuccessBrush);
+                }
+                else
+                {
+                    var message = string.IsNullOrWhiteSpace(result.StandardError)
+                        ? result.StandardOutput
+                        : result.StandardError;
+                    SetStatus("矩阵排列失败：" + message.Trim(), ErrorBrush);
+                }
+            }
+            catch (Exception error)
+            {
+                SetStatus("矩阵排列失败：" + error.Message, ErrorBrush);
+            }
+            finally
+            {
+                SetRunning(false);
+            }
+        }
+
         private static async Task<ProcessResult> RunProcessorAsync(
             string executable,
             string operation,
@@ -485,6 +618,8 @@ namespace CdrOutlinePlugin
                 arguments = "export-selection-svg";
             else if (operation == "export-page")
                 arguments = "export-page-svg";
+            else if (operation == "matrix-arrange")
+                arguments = string.Format(CultureInfo.InvariantCulture, "matrix-arrange {0:0} {1:R} {2:R}", outline, diameter, clearance);
             else
                 arguments = "merge-selected-holes";
             var startInfo = new ProcessStartInfo(executable, arguments)
@@ -559,6 +694,17 @@ namespace CdrOutlinePlugin
             return parsed && value >= 0 && !double.IsInfinity(value) && !double.IsNaN(value);
         }
 
+        private static bool TryReadPositiveInteger(TextBox input, out double value)
+        {
+            if (!TryReadPositive(input, out value))
+                return false;
+            var rounded = Math.Round(value);
+            var valid = Math.Abs(value - rounded) < 0.0000001 && rounded <= int.MaxValue;
+            if (!valid)
+                input.BorderBrush = ErrorBrush;
+            return valid;
+        }
+
         private void SetRunning(bool running)
         {
             outlineOffset.IsEnabled = !running;
@@ -570,6 +716,10 @@ namespace CdrOutlinePlugin
             trimButton.IsEnabled = !running;
             addHoleButton.IsEnabled = !running;
             mergeHolesButton.IsEnabled = !running;
+            matrixColumns.IsEnabled = !running;
+            matrixGapX.IsEnabled = !running;
+            matrixGapY.IsEnabled = !running;
+            matrixArrangeButton.IsEnabled = !running;
             exportSelectionButton.IsEnabled = !running;
             exportPageButton.IsEnabled = !running;
             autoUploadPrintFlow.IsEnabled = !running;

@@ -121,6 +121,14 @@ mod windows_adapter {
         pub operation: SelectionOperation,
     }
 
+    #[derive(Debug, Clone, Copy)]
+    pub struct MatrixArrangeOutcome {
+        pub selected_count: i32,
+        pub arranged_count: usize,
+        pub columns: i32,
+        pub rows: i32,
+    }
+
     struct MergeSelectionShape {
         shape: Dispatch,
         curve: Dispatch,
@@ -425,6 +433,12 @@ mod windows_adapter {
             [command, output] if command == "export-page-svg" => {
                 export_svg_cli(Some(Path::new(output)), false)
             }
+            [command, columns, gap_x, gap_y] if command == "matrix-arrange" => {
+                let columns = parse_matrix_columns(columns)?;
+                let gap_x = parse_mm("矩阵横向间距", gap_x)?;
+                let gap_y = parse_mm("矩阵纵向间距", gap_y)?;
+                arrange_selection_matrix_cli(columns, gap_x, gap_y)
+            }
             [command] if command == "process-selection" => {
                 process_selection_cli(
                     ProcessingSettings::default(),
@@ -570,7 +584,7 @@ mod windows_adapter {
                 )
             }
             _ => Err(io::Error::other(
-                "usage: cdr-corel probe | export-selection-svg [output.svg] | export-page-svg [output.svg] | outline-selection <outline-mm> <tool-mm> <smoothing-mm> | add-selection-holes <diameter-mm> <clearance-mm> | merge-selected-holes | trim-transparent-selection <outline-mm> <tool-mm> <smoothing-mm> | process-selection [report.json] | process-selection-settings <outline-mm> <hole-diameter-mm> <hole-edge-clearance-mm> [tool-diameter-mm] [smoothing-mm] [report.json] | verify-selection <output.cdr> <selection-report.json> <verification.json> | write <source.cdr> <output.cdr> <vector-output.json> | verify <source.cdr> <output.cdr> <vector-output.json> <verification.json>",
+                "usage: cdr-corel probe | export-selection-svg [output.svg] | export-page-svg [output.svg] | matrix-arrange <columns> <gap-x-mm> <gap-y-mm> | outline-selection <outline-mm> <tool-mm> <smoothing-mm> | add-selection-holes <diameter-mm> <clearance-mm> | merge-selected-holes | trim-transparent-selection <outline-mm> <tool-mm> <smoothing-mm> | process-selection [report.json] | process-selection-settings <outline-mm> <hole-diameter-mm> <hole-edge-clearance-mm> [tool-diameter-mm] [smoothing-mm] [report.json] | verify-selection <output.cdr> <selection-report.json> <verification.json> | write <source.cdr> <output.cdr> <vector-output.json> | verify <source.cdr> <output.cdr> <vector-output.json> <verification.json>",
                 )
                 .into()),
         }
@@ -1526,6 +1540,166 @@ mod windows_adapter {
             .ok_or_else(|| io::Error::other(format!("{name} 参数不是有效文本")))?
             .parse::<f64>()
             .map_err(|_| io::Error::other(format!("{name} 参数不是有效数字")).into())
+    }
+
+    fn parse_matrix_columns(value: &std::ffi::OsStr) -> Result<i32> {
+        let columns = value
+            .to_str()
+            .ok_or_else(|| io::Error::other("矩阵列数参数不是有效文本"))?
+            .parse::<i32>()
+            .map_err(|_| io::Error::other("矩阵列数必须是正整数"))?;
+        if columns < 1 {
+            return Err(io::Error::other("矩阵列数必须大于 0").into());
+        }
+        Ok(columns)
+    }
+
+    fn arrange_selection_matrix_cli(columns: i32, gap_x_mm: f64, gap_y_mm: f64) -> Result<()> {
+        let outcome = arrange_selection_matrix_with_progress(
+            columns,
+            gap_x_mm,
+            gap_y_mm,
+            |progress, stage| println!("__CDR_PROGRESS__\t{progress:.3}\t{stage}"),
+        )?;
+        println!(
+            "矩阵排列完成：已处理选中对象 {} 个，排列单元 {} 个，排列为 {} 列 × {} 行；文档未自动保存",
+            outcome.selected_count, outcome.arranged_count, outcome.columns, outcome.rows,
+        );
+        Ok(())
+    }
+
+    pub fn arrange_selection_matrix_with_progress<F>(
+        columns: i32,
+        gap_x_mm: f64,
+        gap_y_mm: f64,
+        mut progress: F,
+    ) -> Result<MatrixArrangeOutcome>
+    where
+        F: FnMut(f32, &str),
+    {
+        if columns < 1 {
+            return Err(io::Error::other("矩阵列数必须大于 0").into());
+        }
+        if !gap_x_mm.is_finite() || gap_x_mm < 0.0 || !gap_y_mm.is_finite() || gap_y_mm < 0.0 {
+            return Err(io::Error::other("矩阵间距必须是大于或等于 0 的有限数字").into());
+        }
+
+        progress(0.02, "连接 CorelDRAW 并读取当前选择");
+        let _apartment = ComApartment::initialize()?;
+        let app = coreldraw_application()?;
+        let document = app.get_dispatch("ActiveDocument").map_err(|_| {
+            io::Error::other("CorelDRAW 中没有活动文档；请先打开文档并选择重叠组合")
+        })?;
+        let selection = app.get_dispatch("ActiveSelectionRange")?;
+        let selected_count = selection.get_i32("Count")?;
+        if selected_count == 0 {
+            return Err(io::Error::other("当前没有选择对象；请先框选重叠的外层组合").into());
+        }
+
+        let mut selected_shapes = Vec::with_capacity(selected_count as usize);
+        for index in 1..=selected_count {
+            let shape = selection.get_dispatch_item(index)?;
+            selected_shapes.push(shape);
+        }
+
+        // Remove a single wrapper group only when it is unambiguous. When
+        // several groups or ordinary objects are selected, arrange exactly
+        // those selected shapes and preserve their grouping.
+        let unwrap_single_wrapper =
+            if selected_shapes.len() == 1 && selected_shapes[0].get_i32("Type")? == 7 {
+                let children = selected_shapes[0].get_dispatch("Shapes")?;
+                let child_count = children.get_i32("Count")?;
+                let child_types = (1..=child_count)
+                    .map(|index| children.get_dispatch_item(index)?.get_i32("Type"))
+                    .collect::<Result<Vec<_>>>()?;
+                child_count > 1 && child_types.iter().all(|shape_type| *shape_type == 7)
+            } else {
+                false
+            };
+
+        let units = document_units(&app, &document)?;
+        let gap_x = units.value_from_mm(gap_x_mm);
+        let gap_y = units.value_from_mm(gap_y_mm);
+        document.call("BeginCommandGroup", vec!["矩阵排列选中内容".into()])?;
+
+        let result = (|| {
+            let arranged_shapes = if unwrap_single_wrapper {
+                progress(0.18, "解除一层外层组合并保留内部组合");
+                let ungrouped = selected_shapes[0].call_dispatch("UngroupEx", Vec::new())?;
+                let mut shapes = Vec::new();
+                for index in 1..=ungrouped.get_i32("Count")? {
+                    shapes.push(ungrouped.get_dispatch_item(index)?);
+                }
+                shapes
+            } else {
+                progress(0.18, "保留选中对象的组合关系");
+                selected_shapes
+            };
+            if arranged_shapes.is_empty() {
+                return Err(io::Error::other("选中的内容没有可排列的对象").into());
+            }
+
+            let mut origin_left = f64::INFINITY;
+            let mut origin_top = f64::NEG_INFINITY;
+            let mut cell_width: f64 = 0.0;
+            let mut cell_height: f64 = 0.0;
+            for shape in &arranged_shapes {
+                let left = shape.get_f64("LeftX")?;
+                let top = shape.get_f64("TopY")?;
+                let width = shape.get_f64("SizeWidth")?;
+                let height = shape.get_f64("SizeHeight")?;
+                if !left.is_finite()
+                    || !top.is_finite()
+                    || !width.is_finite()
+                    || !height.is_finite()
+                    || width < 0.0
+                    || height < 0.0
+                {
+                    return Err(io::Error::other("CorelDRAW 返回了无效的对象尺寸").into());
+                }
+                origin_left = origin_left.min(left);
+                origin_top = origin_top.max(top);
+                cell_width = cell_width.max(width);
+                cell_height = cell_height.max(height);
+            }
+
+            let step_x = cell_width + gap_x;
+            let step_y = cell_height + gap_y;
+            progress(0.55, "按统一单元格计算矩阵位置");
+            for (index, shape) in arranged_shapes.iter().enumerate() {
+                let index = index as i32;
+                let column = index % columns;
+                let row = index / columns;
+                shape.put("LeftX", (origin_left + f64::from(column) * step_x).into())?;
+                shape.put("TopY", (origin_top - f64::from(row) * step_y).into())?;
+            }
+
+            arranged_shapes[0].call("CreateSelection", Vec::new())?;
+            for shape in arranged_shapes.iter().skip(1) {
+                shape.call("AddToSelection", Vec::new())?;
+            }
+            let rows = (arranged_shapes.len() as i32 + columns - 1) / columns;
+            progress(0.92, "完成矩阵排列");
+            Ok(MatrixArrangeOutcome {
+                selected_count,
+                arranged_count: arranged_shapes.len(),
+                columns,
+                rows,
+            })
+        })();
+
+        match result {
+            Ok(outcome) => {
+                document.call("EndCommandGroup", Vec::new())?;
+                progress(1.0, "矩阵排列完成；CorelDRAW 文档未自动保存");
+                Ok(outcome)
+            }
+            Err(error) => {
+                let _ = document.call("EndCommandGroup", Vec::new());
+                let _ = document.call("Undo", vec![1_i32.into()]);
+                Err(error)
+            }
+        }
     }
 
     pub fn process_active_selection(
@@ -4249,7 +4423,8 @@ mod windows_adapter {
 
 #[cfg(windows)]
 pub use windows_adapter::{
-    ProcessOutcome, ProcessingSettings, SelectionOperation, process_active_selection,
+    MatrixArrangeOutcome, ProcessOutcome, ProcessingSettings, SelectionOperation,
+    arrange_selection_matrix_with_progress, process_active_selection,
     process_selection_with_progress, run_cli,
 };
 
